@@ -4,27 +4,51 @@
 from setuptools import setup, find_packages
 
 
+def _load_requires_from_file(filepath):
+    return [pkg_name.rstrip('\r\n') for pkg_name in open(filepath).readlines()]
+
+
 def _install_requires():
-    return ['furl', 'kombu']
+    return _load_requires_from_file('requirements.txt')
 
 
 def _tests_require():
-    return [
-        'nose',
-        'mox',
-    ]
+    return _load_requires_from_file('test-requirements.txt')
+
+
+def _packages():
+    return find_packages(
+        exclude=[
+            '*.tests',
+            '*.tests.*',
+            'tests.*',
+            'tests'
+        ]
+    )
 
 if __name__ == '__main__':
-    setup(name='rabbitracer',
-          version='0.1',
-          description='RabbitMQ Firehose Dump Script',
-          author='momijiame',
-          url='https://github.com/momijiame/rabbitracer',
-          packages=find_packages(exclude=['test']),
-          install_requires=_install_requires(),
-          test_suite='nose.collector',
-          tests_require=_tests_require(),
-          entry_points="""
-          [console_scripts]
-          rabbitracer = rabbitracer:main
-          """,)
+    setup(
+        name='rabbitracer',
+        version='0.1',
+        description='RabbitMQ Firehose Dump Script',
+        author='momijiame',
+        author_email='amedama.ginmokusei@gmail.com',
+        url='https://github.com/momijiame/rabbitracer',
+        classifiers=[
+            'Programming Language :: Python :: 2',
+            'Programming Language :: Python :: 2.7',
+            'Development Status :: 4 - Beta',
+            'License :: OSI Approved :: Apache Software License',
+            'Intended Audience :: Developers',
+            'Natural Language :: Japanese',
+            'Operating System :: POSIX'
+        ],
+        packages=_packages(),
+        install_requires=_install_requires(),
+        tests_require=_tests_require(),
+        test_suite='nose.collector',
+        entry_points="""
+        [console_scripts]
+        rabbitracer = rabbitracer:main
+        """,
+    )
