@@ -2,14 +2,14 @@ rabbitracer
 ===========
 
 
-# ����͉��H
+# これは何？
 
-RabbitMQ �ɗ����S�Ẵ��b�Z�[�W�� JSON �Ń_���v���邽�߂̃X�N���v�g�ł��B
-RabbitMQ ���p�����V�X�e���̃f�o�b�O�ɗL�p�ł��B
+RabbitMQ に流れる全てのメッセージを JSON でダンプするためのスクリプトです。
+RabbitMQ も用いたシステムのデバッグに有用です。
 
-# �C���X�g�[��
+# インストール
 
-�C���X�g�[���Ǝ��s�ɂ� Python ���K�v�ł��B
+インストールと実行には Python が必要です。
 
 ```
 $ git clone https://github.com/momijiame/rabbitracer.git
@@ -17,9 +17,9 @@ $ cd rabbitracer
 $ python setup.py install
 ```
 
-# �g����
+# 使い方
 
-RabbitMQ ���N��������Ԃ� Firehose �@�\��L���ɂ��܂��B
+RabbitMQ が起動した状態で Firehose 機能を有効にします。
 
 ```
 $ rabbitmqctl stop_app
@@ -27,9 +27,9 @@ $ rabbitmqctl trace_on
 $ rabbitmqctl start_app
 ```
 
-�X�N���v�g�����s����� RabbitMQ �ɗ���郁�b�Z�[�W�� JSON �ŏo�͂���܂��B
-�f�t�H���g�ł̓��[�J���z�X�g�ɃQ�X�g�A�J�E���g�Őڑ����܂��B
-�ύX����ꍇ�̓I�v�V�����Ŏw��ł��܂��B
+スクリプトを実行すると RabbitMQ に流れるメッセージが JSON で出力されます。
+デフォルトではローカルホストにゲストアカウントで接続します。
+変更する場合はオプションで指定できます。
 
 ```
 $ rabbitracer
