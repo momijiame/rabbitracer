@@ -5,49 +5,108 @@ import argparse
 import json
 import uuid
 import types
+import inspect
+from abc import ABCMeta, abstractmethod
 
 from furl import furl
 from kombu import Connection, Exchange, Queue
 
 
-def process_message(body, message):
+class FirehoseConsumer(object):
+    __metaclass__ = ABCMeta
 
-    def _is_hidden(attribute_name):
-        return attribute_name.startswith('_')
+    EXCHANGE_NAME = 'amq.rabbitmq.trace'
+    EXCHANGE_TYPE = 'topic'
 
-    def _is_acceptable(attribute_refs):
-        attribute_type = type(attribute_refs)
+    def __init__(self, uri):
+        self.uri = uri
+
+    @abstractmethod
+    def on_message(self, msg):
+        pass
+
+    def start(self):
+        trace_exchange = Exchange(self.EXCHANGE_NAME, self.EXCHANGE_TYPE)
+        trace_queue = Queue(
+            'firehose.' + str(uuid.uuid4()),
+            exchange=trace_exchange,
+            routing_key='#',
+            auto_delete=True,
+        )
+        with Connection(self.uri) as connection:
+            with connection.Consumer(
+                trace_queue,
+                callbacks=[
+                    self.on_message,
+                ],
+            ):
+                while True:
+                    connection.drain_events()
+
+
+class FirehoseJsonDumper(FirehoseConsumer):
+
+    def __init__(self, uri):
+        super(FirehoseJsonDumper, self).__init__(uri)
+        self.serializer = JsonSerializer()
+
+    def on_message(self, msg):
+        serialized_msg = self.serializer.serialize(msg)
+        print(serialized_msg)
+
+
+class MessageSerializer(object):
+    __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def serialize(self, msg):
+        pass
+
+
+class JsonSerializer(MessageSerializer):
+
+    def _is_acceptable(self, attr):
         acceptable_types = [
-            types.NoneType, types.ListType, types.DictType,
-            types.StringTypes, types.UnicodeType, types.BooleanType,
-            types.IntType, types.LongType, types.FloatType,
+            types.NoneType,
+            types.ListType,
+            types.DictType,
+            types.StringTypes,
+            types.UnicodeType,
+            types.BooleanType,
+            types.IntType,
+            types.LongType,
+            types.FloatType,
         ]
-        for acceptable_type in acceptable_types:
-            if attribute_type == acceptable_type:
-                return True
-        return False
+        attr_type = type(attr)
+        return attr_type in acceptable_types
 
-    def _encode(attribute_name, attribute_refs):
-        if attribute_name != 'payload':
-            return attribute_refs
-        properties = message.headers.get('properties')
+    def _encode(self, msg, attr_name, attr):
+        if attr_name != 'payload':
+            return attr
+        properties = msg.headers.get('properties')
         content_type = properties.get('content_type')
         if not content_type:
-            return attribute_refs
+            return attr
         if content_type.startswith('application/json'):
-            return json.loads(attribute_refs)
-        return attribute_refs
+            return json.loads(attr)
+        return attr
 
-    dump_dict = {}
-    for attr_name in dir(message):
-        if _is_hidden(attr_name):
-            continue
-        attribute = getattr(message, attr_name)
-        if not _is_acceptable(attribute):
-            continue
-        dump_dict[attr_name] = _encode(attr_name, attribute)
-    message.ack()
-    print(json.dumps(dump_dict))
+    def serialize(self, msg):
+        attrs = inspect.getmembers(
+            msg,
+            lambda key, value: (
+                not inspect.ismethod(key) and
+                not inspect.isfunction(key)
+            )
+        )
+
+        result = [
+            (attr_name, self._encode(msg, attr_name, attr))
+            for attr_name, attr in attrs if self._is_acceptable(attr)
+        ]
+
+        msg.ack()
+        return json.dumps(result)
 
 
 def _parse_args():
@@ -83,31 +142,25 @@ def _parse_args():
     return arg_parser.parse_args()
 
 
-def _main_loop(args):
+def _build_uri(args):
+    f = furl()
+    f.scheme = 'amqp'
+    f.username = args.username
+    f.password = args.password
+    f.hostname = args.hostname
+    f.path = args.virtualhost
+    return str(f)
 
-    def _build_url():
-        f = furl()
-        f.scheme = 'amqp'
-        f.username = args.username
-        f.password = args.password
-        f.hostname = args.hostname
-        f.path = args.virtualhost
-        return str(f)
 
-    trace_exchange = Exchange('amq.rabbitmq.trace', 'topic')
-    trace_queue = Queue('firehose.' + str(uuid.uuid4()),
-                        exchange=trace_exchange,
-                        routing_key='#',
-                        auto_delete=True)
-    with Connection(_build_url()) as connection:
-        with connection.Consumer(trace_queue, callbacks=[process_message]):
-            while True:
-                connection.drain_events()
+def _main_loop(uri):
+    consumer = FirehoseJsonDumper(uri)
+    consumer.start()
 
 
 def main():
     args = _parse_args()
-    _main_loop(args)
+    uri = _build_uri(args)
+    _main_loop(uri)
 
 
 if __name__ == '__main__':
