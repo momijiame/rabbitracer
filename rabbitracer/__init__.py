@@ -50,36 +50,48 @@ def process_message(body, message):
     print(json.dumps(dump_dict))
 
 
-def parse_arguments():
+def _parse_args():
     description = 'RabbitMQ firehose dump script'
 
-    option_n_help = 'hostname'
-    option_u_help = 'username'
-    option_w_help = 'password'
-    option_v_help = 'virtualhost'
+    option_n_help = 'Set RabbitMQ Hostname'
+    option_u_help = 'Set RabbitMQ Username'
+    option_w_help = 'Set RabbitMQ Password'
+    option_v_help = 'Set RabbitMQ VirtualHost'
 
     arg_parser = argparse.ArgumentParser(description=description)
-    arg_parser.add_argument('-n', '--hostname', help=option_n_help,
-                            required=False, default='localhost')
-    arg_parser.add_argument('-u', '--username', help=option_u_help,
-                            required=False, default='guest')
-    arg_parser.add_argument('-w', '--password', help=option_w_help,
-                            required=False, default='guest')
-    arg_parser.add_argument('-v', '--virtualhost', help=option_v_help,
-                            required=False, default='/')
-    global ARGS
-    ARGS = arg_parser.parse_args()
+    arg_parser.add_argument(
+        '-n', '--hostname',
+        default='localhost',
+        help=option_n_help,
+    )
+    arg_parser.add_argument(
+        '-u', '--username',
+        default='guest',
+        help=option_u_help,
+    )
+    arg_parser.add_argument(
+        '-w', '--password',
+        default='guest',
+        help=option_w_help,
+    )
+    arg_parser.add_argument(
+        '-v', '--virtualhost',
+        default='/',
+        help=option_v_help,
+    )
+
+    return arg_parser.parse_args()
 
 
-def main_loop():
+def _main_loop(args):
 
     def _build_url():
         f = furl()
         f.scheme = 'amqp'
-        f.username = ARGS.username
-        f.password = ARGS.password
-        f.hostname = ARGS.hostname
-        f.path = ARGS.virtualhost
+        f.username = args.username
+        f.password = args.password
+        f.hostname = args.hostname
+        f.path = args.virtualhost
         return str(f)
 
     trace_exchange = Exchange('amq.rabbitmq.trace', 'topic')
@@ -94,8 +106,8 @@ def main_loop():
 
 
 def main():
-    parse_arguments()
-    main_loop()
+    args = _parse_args()
+    _main_loop(args)
 
 
 if __name__ == '__main__':
