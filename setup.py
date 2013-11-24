@@ -34,7 +34,7 @@ def _packages():
 if __name__ == '__main__':
     setup(
         name='rabbitracer',
-        version='0.1.1',
+        version='0.1.2',
         description='RabbitMQ Firehose Dump Script',
         author='momijiame',
         author_email='amedama.ginmokusei@gmail.com',
