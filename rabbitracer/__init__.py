@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import argparse
 import json
 import uuid
@@ -10,6 +11,65 @@ from abc import ABCMeta, abstractmethod
 
 from furl import furl
 from kombu import Connection, Exchange, Queue
+
+
+class MessageSerializer(object):
+    __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def serialize(self, msg):
+        pass
+
+
+class JsonSerializer(MessageSerializer):
+
+    def __init__(self, prettyprint=False):
+        super(JsonSerializer, self).__init__()
+        self.prettyprint = prettyprint
+
+    def _is_acceptable(self, attr):
+        acceptable_types = [
+            types.NoneType,
+            types.ListType,
+            types.DictType,
+            types.StringTypes,
+            types.UnicodeType,
+            types.BooleanType,
+            types.IntType,
+            types.LongType,
+            types.FloatType,
+        ]
+        attr_type = type(attr)
+        return attr_type in acceptable_types
+
+    def _encode(self, msg, attr_name, attr):
+        if attr_name != 'payload':
+            return attr
+        properties = msg.headers.get('properties')
+        content_type = properties.get('content_type')
+        if not content_type:
+            return attr
+        if content_type.startswith('application/json'):
+            return json.loads(attr)
+        return attr
+
+    def serialize(self, msg):
+        attrs = inspect.getmembers(
+            msg,
+            lambda attr: (
+                not inspect.ismethod(attr) and
+                not inspect.isfunction(attr)
+            )
+        )
+
+        result = [
+            (attr_name, self._encode(msg, attr_name, attr))
+            for attr_name, attr in attrs if self._is_acceptable(attr)
+        ]
+
+        msg.ack()
+        indent = 4 if self.prettyprint else None
+        return json.dumps(result, indent=indent)
 
 
 class FirehoseConsumer(object):
@@ -46,97 +106,61 @@ class FirehoseConsumer(object):
 
 class FirehoseJsonDumper(FirehoseConsumer):
 
-    def __init__(self, uri):
+    def __init__(self, uri, serializer=None):
         super(FirehoseJsonDumper, self).__init__(uri)
-        self.serializer = JsonSerializer()
+        self.serializer = serializer or JsonSerializer()
 
-    def on_message(self, msg):
+    def on_message(self, body, msg):
         serialized_msg = self.serializer.serialize(msg)
         print(serialized_msg)
 
 
-class MessageSerializer(object):
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
-    def serialize(self, msg):
-        pass
-
-
-class JsonSerializer(MessageSerializer):
-
-    def _is_acceptable(self, attr):
-        acceptable_types = [
-            types.NoneType,
-            types.ListType,
-            types.DictType,
-            types.StringTypes,
-            types.UnicodeType,
-            types.BooleanType,
-            types.IntType,
-            types.LongType,
-            types.FloatType,
-        ]
-        attr_type = type(attr)
-        return attr_type in acceptable_types
-
-    def _encode(self, msg, attr_name, attr):
-        if attr_name != 'payload':
-            return attr
-        properties = msg.headers.get('properties')
-        content_type = properties.get('content_type')
-        if not content_type:
-            return attr
-        if content_type.startswith('application/json'):
-            return json.loads(attr)
-        return attr
-
-    def serialize(self, msg):
-        attrs = inspect.getmembers(
-            msg,
-            lambda key, value: (
-                not inspect.ismethod(key) and
-                not inspect.isfunction(key)
-            )
-        )
-
-        result = [
-            (attr_name, self._encode(msg, attr_name, attr))
-            for attr_name, attr in attrs if self._is_acceptable(attr)
-        ]
-
-        msg.ack()
-        return json.dumps(result)
-
-
 def _parse_args():
     description = 'RabbitMQ firehose dump script'
+    arg_parser = argparse.ArgumentParser(description=description)
 
     option_n_help = 'Set RabbitMQ Hostname'
-    option_u_help = 'Set RabbitMQ Username'
-    option_w_help = 'Set RabbitMQ Password'
-    option_v_help = 'Set RabbitMQ VirtualHost'
-
-    arg_parser = argparse.ArgumentParser(description=description)
+    default_hostname = os.environ.get('RABBIT_HOSTNAME') or 'localhost'
     arg_parser.add_argument(
         '-n', '--hostname',
-        default='localhost',
+        type=str,
+        required=False, default=default_hostname,
         help=option_n_help,
     )
+
+    option_u_help = 'Set RabbitMQ Username'
+    default_username = os.environ.get('RABBIT_USERNAME') or 'guest'
     arg_parser.add_argument(
         '-u', '--username',
-        default='guest',
+        type=str,
+        required=False, default=default_username,
         help=option_u_help,
     )
+
+    option_p_help = 'Set RabbitMQ Password'
+    default_password = os.environ.get('RABBIT_PASSWORD') or 'guest'
     arg_parser.add_argument(
-        '-w', '--password',
-        default='guest',
-        help=option_w_help,
+        '-p', '--password',
+        type=str,
+        required=False, default=default_password,
+        help=option_p_help,
     )
+
+    option_v_help = 'Set RabbitMQ VirtualHost'
+    default_virtualhost = os.environ.get('RABBIT_VIRTUALHOST') or '/'
     arg_parser.add_argument(
         '-v', '--virtualhost',
-        default='/',
+        type=str,
+        required=False, default=default_virtualhost,
         help=option_v_help,
+    )
+
+    option_r_help = 'Pretty print'
+    arg_parser.add_argument(
+        '-i', '--pretty-print',
+        action='store_true',
+        required=False, default=False,
+        help=option_r_help,
     )
 
     return arg_parser.parse_args()
@@ -152,15 +176,16 @@ def _build_uri(args):
     return str(f)
 
 
-def _main_loop(uri):
-    consumer = FirehoseJsonDumper(uri)
+def _main_loop(args):
+    uri = _build_uri(args)
+    serializer = JsonSerializer(args.pretty_print)
+    consumer = FirehoseJsonDumper(uri, serializer)
     consumer.start()
 
 
 def main():
     args = _parse_args()
-    uri = _build_uri(args)
-    _main_loop(uri)
+    _main_loop(args)
 
 
 if __name__ == '__main__':
