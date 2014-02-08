@@ -52,6 +52,8 @@ if __name__ == '__main__':
         install_requires=_install_requires(),
         tests_require=_tests_require(),
         test_suite='nose.collector',
+        include_package_data=True,
+        zip_safe=False,
         entry_points="""
         [console_scripts]
         rabbitracer = rabbitracer:main
